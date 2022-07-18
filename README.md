@@ -1,2 +1,1 @@
-# docker-get-started
-Getting started with Docker
+# Getting Started with Docker
