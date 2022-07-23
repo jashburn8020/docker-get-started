@@ -47,7 +47,10 @@
 
 #### Containers
 
-- A container is a runnable instance of an image
+- A container is
+  - a runnable instance of an image
+  - a sandboxed process on your machine that is isolated from all other processes on the host machine
+    - leverages kernel namespaces and cgroups, features that have been in Linux for a long time
 - You can control how isolated a container’s network, storage, or other underlying subsystems are from other containers or from the host machine
 - A container is defined by its image as well as any configuration options you provide to it when you create or start it
 - When a container is removed, any changes to its state that are not stored in persistent storage disappear
