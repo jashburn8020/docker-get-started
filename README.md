@@ -318,10 +318,90 @@ CONTAINER ID   IMAGE             COMMAND                  CREATED         STATUS
 c8df059c1dd5   getting-started   "docker-entrypoint.s…"   6 minutes ago   Up 6 minutes   0.0.0.0:3000->3000/tcp, :::3000->3000/tcp   sad_chandrasekhar
 ```
 
+### Update the application
+
+- Update the source code in `src/static/js/app.js`:
+
+```html
+-                <p className="text-center">No items yet! Add one above!</p>
++                <p className="text-center">You have no todo items yet! Add one above!</p>
+```
+
+- Stop the container:
+  - `docker stop c8df059c1dd5`
+    - `c8df059c1dd5` is the container ID obtained via `docker ps`
+
+```console
+$ docker stop c8df059c1dd5
+c8df059c1dd5
+
+$ docker ps
+CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
+
+$ docker ps -a
+CONTAINER ID   IMAGE             COMMAND                  CREATED         STATUS                     PORTS     NAMES
+c8df059c1dd5   getting-started   "docker-entrypoint.s…"   4 minutes ago   Exited (0) 3 minutes ago             sad_chandrasekhar
+```
+
+- Remove the container:
+  - `docker rm c8df059c1dd5`
+- Build the updated version of the image:
+  - `docker build -t getting-started .`
+
+```console
+$ docker build -t getting-started .
+Sending build context to Docker daemon  4.655MB
+Step 1/7 : FROM node:12-alpine
+ ---> bb6d28039b8c
+Step 2/7 : RUN apk add --no-cache python2 g++ make
+ ---> Using cache
+ ---> 1391e56b4519
+Step 3/7 : WORKDIR /app
+ ---> Using cache
+ ---> 805e1ef0150d
+Step 4/7 : COPY . .
+ ---> d463bb69b63d
+Step 5/7 : RUN yarn install --production
+ ---> Running in 9db2e1143361
+yarn install v1.22.18
+[1/4] Resolving packages...
+warning Resolution field "ansi-regex@5.0.1" is incompatible with requested version "ansi-regex@^2.0.0"
+warning Resolution field "ansi-regex@5.0.1" is incompatible with requested version "ansi-regex@^3.0.0"
+[2/4] Fetching packages...
+[3/4] Linking dependencies...
+[4/4] Building fresh packages...
+Done in 7.15s.
+Removing intermediate container 9db2e1143361
+ ---> 5d27ac92cb88
+Step 6/7 : CMD ["node", "src/index.js"]
+ ---> Running in ee54c36bb9bb
+Removing intermediate container ee54c36bb9bb
+ ---> 8c97124a9f9e
+Step 7/7 : EXPOSE 3000
+ ---> Running in 591fea5861dd
+Removing intermediate container 591fea5861dd
+ ---> 2c0bb796933b
+Successfully built 2c0bb796933b
+Successfully tagged getting-started:latest
+
+$ docker images
+REPOSITORY        TAG         IMAGE ID       CREATED          SIZE
+getting-started   latest      2c0bb796933b   12 seconds ago   404MB
+<none>            <none>      5e46b6aa4a3f   7 hours ago      404MB
+node              12-alpine   bb6d28039b8c   3 months ago     91MB
+hello-world       latest      feb5d9fea6a5   10 months ago    13.3kB
+```
+
+- Note the new image ID, `2c0bb796933b`
+- Start the updated app container:
+  - `docker run -dp 3000:3000 getting-started`
+- Check the update at <http://localhost:3000/>
+
 ## Sources
 
 - "Docker Overview." _Docker Documentation_, 18 July 2022, [docs.docker.com/get-started/overview/](https://docs.docker.com/get-started/overview/). Accessed 18 July 2022.
 - "Install Docker Engine on Ubuntu." _Docker Documentation_, 20 July 2022, [docs.docker.com/engine/install/ubuntu/](https://docs.docker.com/engine/install/ubuntu/). Accessed 20 July 2022.
 - "Post-Installation Steps for Linux." _Docker Documentation_, 20 July 2022, [docs.docker.com/engine/install/linux-postinstall/](https://docs.docker.com/engine/install/linux-postinstall/). Accessed 20 July 2022.
 - "Sample Application." _Docker Documentation_, 22 July 2022, [docs.docker.com/get-started/02_our_app/](https://docs.docker.com/get-started/02_our_app/). Accessed 23 July 2022.
+- "Update the Application." _Docker Documentation_, 22 July 2022, [docs.docker.com/get-started/03_updating_app/](https://docs.docker.com/get-started/03_updating_app/). Accessed 24 July 2022.
 - "Dockerfile Reference." _Docker Documentation_, 22 July 2022, [docs.docker.com/engine/reference/builder/](https://docs.docker.com/engine/reference/builder/). Accessed 23 July 2022.
