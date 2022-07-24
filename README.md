@@ -397,6 +397,65 @@ hello-world       latest      feb5d9fea6a5   10 months ago    13.3kB
   - `docker run -dp 3000:3000 getting-started`
 - Check the update at <http://localhost:3000/>
 
+### Share the application
+
+- To share Docker images, you have to use a Docker registry
+- The default registry is Docker Hub and is where all the images we’ve used have come from
+- Create a Docker Hub repository
+  - sign in (or sign up to) [Docker Hub](https://hub.docker.com/)
+  - create a repository named `getting-started` with `Public` visibility
+- Push the image
+  - tag the `getting-started` image with your Docker (Hub) ID
+    - `docker tag getting-started DOCKER-ID/getting-started`
+  - log in to the Docker Hub
+    - `docker login -u DOCKER-ID`
+  - push the image to Docker Hub
+    - `docker push DOCKER-ID/getting-started`
+    - as we didn't specify a tag (as in the `TAG` in `docker tag SOURCE_IMAGE[:TAG] TARGET_IMAGE[:TAG]`), Docker will use a tag called `latest`
+
+```console
+$ docker images
+REPOSITORY                     TAG         IMAGE ID       CREATED         SIZE
+jashburn8020/getting-started   latest      2c0bb796933b   12 hours ago    404MB
+getting-started                latest      2c0bb796933b   12 hours ago    404MB
+<none>                         <none>      5e46b6aa4a3f   19 hours ago    404MB
+node                           12-alpine   bb6d28039b8c   3 months ago    91MB
+hello-world                    latest      feb5d9fea6a5   10 months ago   13.3kB
+
+$ docker push jashburn8020/getting-started
+Using default tag: latest
+The push refers to repository [docker.io/jashburn8020/getting-started]
+dd6ac768356c: Pushed 
+a2ba117ef57f: Pushed 
+23606073410e: Pushed 
+072dfb56dc9e: Pushed 
+7f30cde3f699: Pushed 
+fe810f5902cc: Pushed 
+dfd8c046c602: Pushed 
+4fc242d58285: Pushed 
+latest: digest: sha256:d7011bc85f8269cb27bcd48c1b588fbd47a1488076e8af9c509462afb0c4720a size: 1999
+```
+
+- Note: if we hadn't changed `getting-started` to `DOCKER-ID/getting-started`, the push would fail
+
+```console
+$ docker push getting-started
+Using default tag: latest
+The push refers to repository [docker.io/library/getting-started]
+dd6ac768356c: Preparing 
+a2ba117ef57f: Preparing 
+23606073410e: Preparing 
+072dfb56dc9e: Preparing 
+7f30cde3f699: Preparing 
+fe810f5902cc: Waiting 
+dfd8c046c602: Waiting 
+4fc242d58285: Waiting 
+denied: requested access to the resource is denied
+```
+
+- Log out of Docker Hub
+  - `docker logout`
+
 ## Sources
 
 - "Docker Overview." _Docker Documentation_, 18 July 2022, [docs.docker.com/get-started/overview/](https://docs.docker.com/get-started/overview/). Accessed 18 July 2022.
@@ -404,4 +463,5 @@ hello-world       latest      feb5d9fea6a5   10 months ago    13.3kB
 - "Post-Installation Steps for Linux." _Docker Documentation_, 20 July 2022, [docs.docker.com/engine/install/linux-postinstall/](https://docs.docker.com/engine/install/linux-postinstall/). Accessed 20 July 2022.
 - "Sample Application." _Docker Documentation_, 22 July 2022, [docs.docker.com/get-started/02_our_app/](https://docs.docker.com/get-started/02_our_app/). Accessed 23 July 2022.
 - "Update the Application." _Docker Documentation_, 22 July 2022, [docs.docker.com/get-started/03_updating_app/](https://docs.docker.com/get-started/03_updating_app/). Accessed 24 July 2022.
+- "Share the Application." _Docker Documentation_, 22 July 2022, [docs.docker.com/get-started/04_sharing_app/](https://docs.docker.com/get-started/04_sharing_app/). Accessed 24 July 2022.
 - "Dockerfile Reference." _Docker Documentation_, 22 July 2022, [docs.docker.com/engine/reference/builder/](https://docs.docker.com/engine/reference/builder/). Accessed 23 July 2022.
