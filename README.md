@@ -456,6 +456,110 @@ denied: requested access to the resource is denied
 - Log out of Docker Hub
   - `docker logout`
 
+### Persist the DB
+
+#### The container's filesystem
+
+- When a container runs, it uses the various layers from an image for its filesystem
+- Each container also gets its own “scratch space” to create/update/remove files
+- Any changes won’t be seen in another container, even if they are using the same image
+- Start an `ubuntu` container that will create a file named `/data.txt` with a random number between 1 and 10000
+  - `docker run -d ubuntu bash -c "shuf -i 1-10000 -n 1 -o /data.txt && tail -f /dev/null"`
+    - note: `tail -f` to simply watch a file to keep the container running
+- See the content of the `/data.txt` file
+  - `docker exec <container-id> cat /data.txt`
+
+```console
+$ docker ps
+CONTAINER ID   IMAGE     COMMAND                  CREATED          STATUS          PORTS     NAMES
+9bffc8c7d57b   ubuntu    "bash -c 'shuf -i 1-…"   16 minutes ago   Up 16 minutes             dazzling_hodgkin
+
+$ docker exec 9bffc8c7d57b cat /data.txt
+8605
+
+$ docker exec -it 9bffc8c7d57b bash
+root@9bffc8c7d57b:/# ls
+bin   data.txt  etc   lib    lib64   media  opt   root  sbin  sys  usr
+boot  dev       home  lib32  libx32  mnt    proc  run   srv   tmp  var
+root@9bffc8c7d57b:/# cat data.txt 
+8605
+root@9bffc8c7d57b:/# exit
+```
+
+- Start another `ubuntu` container (the same image) - `data.txt` is not there
+  - `docker run -it ubuntu ls /`
+
+```console
+$ docker run -it ubuntu ls /
+bin   dev  home  lib32	libx32	mnt  proc  run	 srv  tmp  var
+boot  etc  lib	 lib64	media	opt  root  sbin  sys  usr
+```
+
+- Remove the first container
+  - `docker rm -f <container-id>`
+
+#### Container volumes
+
+- [Volumes](https://docs.docker.com/storage/volumes/) provide the ability to connect specific filesystem paths of the container back to the host machine
+  - if a directory in the container is mounted, changes in that directory are also seen on the host machine
+  - if we mount that same directory across container restarts, we’d see the same files
+- There are two main types of volumes:
+  - named volumes
+  - bind mounts
+
+#### Persist the todo data
+
+- The todo app stores its data in a SQLite Database at `/etc/todos/todo.db` in the container’s filesystem
+  - see [`app/src/persistence/sqlite.js`](app/src/persistence/sqlite.js)
+- We can persist the data by creating a volume and attaching (often called “mounting”) it to the directory the data is stored in
+  - as our container writes to the `todo.db` file, it will be persisted to the host in the volume
+- We are going to use a named volume
+  - Docker maintains the physical location on the disk and you only need to remember the name of the volume
+- Stop and remove the todo app container (with `docker rm -f <container-id>`) if it is still running
+- Create a volume
+  - `docker volume create todo-db`
+- Check the location of the volume
+
+```console
+$ docker volume inspect todo-db
+[
+    {
+        "CreatedAt": "2022-07-26T02:11:45+01:00",
+        "Driver": "local",
+        "Labels": {},
+        "Mountpoint": "/var/lib/docker/volumes/todo-db/_data",
+        "Name": "todo-db",
+        "Options": {},
+        "Scope": "local"
+    }
+]
+```
+
+- Start the todo app container, but add the `-v` flag to specify a volume mount and mount it to `/etc/todos`
+  - this will capture all files created at the path
+  - `docker run -dp 3000:3000 -v todo-db:/etc/todos getting-started`
+- Open the app and add a few items to the todo list
+- Check that `todo.db` is in the container's filesystem
+
+```console
+$ docker exec ba3a05573a3d ls /etc/todos
+todo.db
+```
+
+- Check that `todo.db` is stored in the volume
+
+```console
+$ sudo ls /var/lib/docker/volumes/todo-db/_data
+todo.db
+```
+
+- Stop and remove the container for the todo app (with `docker rm -f <container-id>`)
+- Start a new container using the same command from above
+- Open the app and see that the items are still in the list
+- Remove the container when you’re done checking out the list
+- Remove the volume
+  - `docker volume rm todo-db`
+
 ## Sources
 
 - "Docker Overview." _Docker Documentation_, 18 July 2022, [docs.docker.com/get-started/overview/](https://docs.docker.com/get-started/overview/). Accessed 18 July 2022.
@@ -464,4 +568,5 @@ denied: requested access to the resource is denied
 - "Sample Application." _Docker Documentation_, 22 July 2022, [docs.docker.com/get-started/02_our_app/](https://docs.docker.com/get-started/02_our_app/). Accessed 23 July 2022.
 - "Update the Application." _Docker Documentation_, 22 July 2022, [docs.docker.com/get-started/03_updating_app/](https://docs.docker.com/get-started/03_updating_app/). Accessed 24 July 2022.
 - "Share the Application." _Docker Documentation_, 22 July 2022, [docs.docker.com/get-started/04_sharing_app/](https://docs.docker.com/get-started/04_sharing_app/). Accessed 24 July 2022.
+- "Persist the DB." _Docker Documentation_, 25 July 2022, [docs.docker.com/get-started/05_persisting_data/](https://docs.docker.com/get-started/05_persisting_data/). Accessed 26 July 2022.
 - "Dockerfile Reference." _Docker Documentation_, 22 July 2022, [docs.docker.com/engine/reference/builder/](https://docs.docker.com/engine/reference/builder/). Accessed 23 July 2022.
