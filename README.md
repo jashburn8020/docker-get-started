@@ -1,5 +1,35 @@
 # Getting Started with Docker
 
+<!-- TOC -->
+* [Getting Started with Docker](#getting-started-with-docker)
+  * [The Docker platform](#the-docker-platform)
+  * [Docker architecture](#docker-architecture)
+    * [The Docker daemon](#the-docker-daemon)
+    * [The Docker client](#the-docker-client)
+    * [Docker registries](#docker-registries)
+    * [Docker objects](#docker-objects)
+      * [Images](#images)
+      * [Containers](#containers)
+    * [Example `docker run` command](#example-docker-run-command)
+  * [The underlying technology](#the-underlying-technology)
+  * [Install Docker Engine on Ubuntu](#install-docker-engine-on-ubuntu)
+    * [Set up the repository](#set-up-the-repository)
+    * [Install Docker Engine](#install-docker-engine)
+    * [Manage Docker as a non-root user](#manage-docker-as-a-non-root-user)
+    * [Configure Docker to start on boot](#configure-docker-to-start-on-boot)
+    * [Uninstall Docker Engine](#uninstall-docker-engine)
+  * [Sample application](#sample-application)
+    * [Build the app's container image](#build-the-apps-container-image)
+    * [Start an app container](#start-an-app-container)
+    * [Update the application](#update-the-application)
+    * [Share the application](#share-the-application)
+    * [Persist the DB](#persist-the-db)
+      * [The container's filesystem](#the-containers-filesystem)
+      * [Container volumes](#container-volumes)
+      * [Persist the todo data](#persist-the-todo-data)
+  * [Sources](#sources)
+<!-- TOC -->
+
 ## The Docker platform
 
 - Docker provides the ability to package and run an application in a loosely isolated environment called a **container**
@@ -560,6 +590,91 @@ todo.db
 - Remove the volume
   - `docker volume rm todo-db`
 
+### Use bind mounts
+
+- With bind mounts, we control the exact mountpoint on the host
+- We can use this to
+  - persist data
+  - provide additional data into containers
+  - mount our source code into the container to let the application see code changes, respond, and let us see the changes right away
+- Using bind mounts is very common for local development setups
+  - the dev machine doesn't need to have all the build tools and environments installed
+- To run our container to support a development workflow
+  - mount our source code into the container
+  - install all dependencies, including the “dev” dependencies
+  - start nodemon to watch for filesystem changes
+    - [nodemon](https://npmjs.com/package/nodemon): a tool to watch for file changes and then restart the application
+
+```console
+$ docker run -dp 3000:3000 -w /app -v "$(pwd):/app" node:12-alpine sh -c "yarn install && yarn run dev"
+```
+
+- Run the above command from the `app` directory
+  - `-dp 3000:3000`: run in detached (background) mode and create a port mapping
+  - `-w /app`: sets the “working directory” or the current directory that the command will run from
+  - `-v "$(pwd):/app"`: bind mount the current directory from the host in the container into the `/app` directory
+  - `node:12-alpine`: the image to use - this is the base image for our app from the Dockerfile
+  - `sh -c "yarn install && yarn run dev"`: the command
+    - run `yarn install` to install all dependencies and then run `yarn run dev`
+    - the `dev` script in [package.json](app/package.json) starts `nodemon`
+
+```console
+$ docker exec -it 32152b48329c sh
+/app # ls
+Dockerfile    package.json  src
+node_modules  spec          yarn.lock
+/app # exit
+```
+
+- Watch the logs
+  - `docker logs`
+
+```console
+$ docker logs 32152b48329c
+yarn install v1.22.18
+[1/4] Resolving packages...
+warning Resolution field "ansi-regex@5.0.1" is incompatible with requested version "ansi-regex@^2.0.0"
+warning Resolution field "ansi-regex@5.0.1" is incompatible with requested version "ansi-regex@^3.0.0"
+[2/4] Fetching packages...
+[3/4] Linking dependencies...
+[4/4] Building fresh packages...
+Done in 6.84s.
+yarn run v1.22.18
+$ nodemon src/index.js
+[nodemon] 2.0.13
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): *.*
+[nodemon] watching extensions: js,mjs,json
+[nodemon] starting `node src/index.js`
+Using sqlite database at /etc/todos/todo.db
+Listening on port 3000
+```
+
+- Edit the app in the `src/static/js/app.js` file to change the “Add Item” button to simply say “Add”:
+
+```text
+-                         {submitting ? 'Adding...' : 'Add Item'}
++                         {submitting ? 'Adding...' : 'Add'}
+```
+
+```console
+$ docker logs 32152b48329c
+yarn install v1.22.18
+[1/4] Resolving packages...
+...
+Using sqlite database at /etc/todos/todo.db
+Listening on port 3000
+[nodemon] restarting due to changes...
+[nodemon] starting `node src/index.js`
+Using sqlite database at /etc/todos/todo.db
+Listening on port 3000
+```
+
+- Open your web browser to <http://localhost:3000>
+  - you should see the change reflected in the browser
+- When you’re done, stop the container and build your new image using:
+  - `docker build -t getting-started .`
+
 ## Sources
 
 - "Docker Overview." _Docker Documentation_, 18 July 2022, [docs.docker.com/get-started/overview/](https://docs.docker.com/get-started/overview/). Accessed 18 July 2022.
@@ -569,4 +684,5 @@ todo.db
 - "Update the Application." _Docker Documentation_, 22 July 2022, [docs.docker.com/get-started/03_updating_app/](https://docs.docker.com/get-started/03_updating_app/). Accessed 24 July 2022.
 - "Share the Application." _Docker Documentation_, 22 July 2022, [docs.docker.com/get-started/04_sharing_app/](https://docs.docker.com/get-started/04_sharing_app/). Accessed 24 July 2022.
 - "Persist the DB." _Docker Documentation_, 25 July 2022, [docs.docker.com/get-started/05_persisting_data/](https://docs.docker.com/get-started/05_persisting_data/). Accessed 26 July 2022.
+- "Use Bind Mounts." _Docker Documentation_, 27 July 2022, [docs.docker.com/get-started/06_bind_mounts/](https://docs.docker.com/get-started/06_bind_mounts/). Accessed 28 July 2022.
 - "Dockerfile Reference." _Docker Documentation_, 22 July 2022, [docs.docker.com/engine/reference/builder/](https://docs.docker.com/engine/reference/builder/). Accessed 23 July 2022.
