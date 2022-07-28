@@ -27,6 +27,7 @@
       * [The container's filesystem](#the-containers-filesystem)
       * [Container volumes](#container-volumes)
       * [Persist the todo data](#persist-the-todo-data)
+    * [Use bind mounts](#use-bind-mounts)
   * [Sources](#sources)
 <!-- TOC -->
 
