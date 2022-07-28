@@ -613,6 +613,7 @@ $ docker run -dp 3000:3000 -w /app -v "$(pwd):/app" node:12-alpine sh -c "yarn i
   - `-dp 3000:3000`: run in detached (background) mode and create a port mapping
   - `-w /app`: sets the “working directory” or the current directory that the command will run from
   - `-v "$(pwd):/app"`: bind mount the current directory from the host in the container into the `/app` directory
+    - note: files created in the container's `/app` directory will also "synced" to the current directory
   - `node:12-alpine`: the image to use - this is the base image for our app from the Dockerfile
   - `sh -c "yarn install && yarn run dev"`: the command
     - run `yarn install` to install all dependencies and then run `yarn run dev`
