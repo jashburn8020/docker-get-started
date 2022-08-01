@@ -28,6 +28,10 @@
       * [Container volumes](#container-volumes)
       * [Persist the todo data](#persist-the-todo-data)
     * [Use bind mounts](#use-bind-mounts)
+    * [Multi container apps](#multi-container-apps)
+      * [Start MySQL](#start-mysql)
+      * [Connect to MySQL](#connect-to-mysql)
+      * [Run your app with MySQL](#run-your-app-with-mysql)
   * [Sources](#sources)
 <!-- TOC -->
 
@@ -677,6 +681,212 @@ Listening on port 3000
 - When you’re done, stop the container and build your new image using:
   - `docker build -t getting-started .`
 
+### Multi container apps
+
+- Adding MySQL to the application stack - where will MySQL run, the same container or run it separately
+  - each container should do one thing and do it well
+    - scale APIs and front-ends differently than databases 
+    - version and update versions in isolation
+    - use a managed service for the database in production
+    - running multiple processes will require a process manager (the container only starts one process), which adds complexity to container startup/shutdown
+- Container networking: if two containers are on the same network, they can talk to each other, otherwise they can't
+
+#### Start MySQL
+
+- 2 ways to put a container on a network:
+  1. assign it at start
+  2. connect an existing container 
+- The following will create the network first and attach the MySQL container at startup
+- Create the network 
+  - `docker network create todo-app`
+
+```console
+$ docker network create todo-app
+d45705b749291bc9b15dbb78b1b0be28ac9115d332b188eaa3e8914ca6bdd009
+
+$ docker network ls
+NETWORK ID     NAME       DRIVER    SCOPE
+0a249546e0b4   bridge     bridge    local
+bb85c7780343   host       host      local
+1ff9908fd506   none       null      local
+d45705b74929   todo-app   bridge    local
+```
+
+- Start a MySQL container and attach it to the network
+  - `docker run -d --network todo-app --network-alias mysql -v todo-mysql-data:/var/lib/mysql -e MYSQL_ROOT_PASSWORD=secret -e MYSQL_DATABASE=todos mysql:5.7`
+    - `--network`: connect a container to a network
+    - `--network-alias`: add network-scoped alias for the container
+    - see <https://hub.docker.com/_/mysql/> for the environment variables to initialize the database
+    - we’re using a volume named `todo-mysql-data` and mounting it at `/var/lib/mysql`, which is where MySQL stores its data
+      - we never ran a `docker volume create` command, but Docker recognizes we want to use a named volume and creates one automatically for us
+- Connect to the database and verify it connects
+  - `docker exec -it <mysql-container-id> mysql -u root -p`
+  - type `secret` at the password prompt
+- In the MySQL shell, list the databases and verify you see the `todos` database 
+  - `SHOW DATABASES;`
+- Exit the MySQL shell
+  - `exit`
+
+```console
+$ docker exec -it 3f1258495fd8 mysql -u root -p
+Enter password: 
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 2
+Server version: 5.7.39 MySQL Community Server (GPL)
+
+Copyright (c) 2000, 2022, Oracle and/or its affiliates.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> SHOW DATABASES;
++--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| mysql              |
+| performance_schema |
+| sys                |
+| todos              |
++--------------------+
+5 rows in set (0.00 sec)
+
+mysql> exit
+Bye
+```
+
+#### Connect to MySQL
+
+- Use of the [nicolaka/netshoot](https://github.com/nicolaka/netshoot) container to find the MySQL container
+  - a Docker + Kubernetes network troubleshooting swiss-army container
+  - `docker run -it --network todo-app nicolaka/netshoot`
+- Inside the container, use the `dig` command to look up the IP address for the hostname `mysql`
+  - `dig mysql`
+
+```console
+$ docker run -it --network todo-app nicolaka/netshoot
+Unable to find image 'nicolaka/netshoot:latest' locally
+latest: Pulling from nicolaka/netshoot
+...
+4aafb6d72b2b: Pull complete 
+Digest: sha256:aeafd567d7f7f1edb5127ec311599bb2b8a9c0fb31d7a53e9cff26af6d29fd4e
+Status: Downloaded newer image for nicolaka/netshoot:latest
+                    dP            dP                           dP   
+                    88            88                           88   
+88d888b. .d8888b. d8888P .d8888b. 88d888b. .d8888b. .d8888b. d8888P 
+88'  `88 88ooood8   88   Y8ooooo. 88'  `88 88'  `88 88'  `88   88   
+88    88 88.  ...   88         88 88    88 88.  .88 88.  .88   88   
+dP    dP `88888P'   dP   `88888P' dP    dP `88888P' `88888P'   dP   
+                                                                    
+Welcome to Netshoot! (github.com/nicolaka/netshoot)
+                                                                
+
+
+ 93798b3f43c7  ~  dig mysql
+
+; <<>> DiG 9.18.3 <<>> mysql
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 10433
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+
+;; QUESTION SECTION:
+;mysql.				IN	A
+
+;; ANSWER SECTION:
+mysql.			600	IN	A	172.18.0.2
+
+;; Query time: 0 msec
+;; SERVER: 127.0.0.11#53(127.0.0.11) (UDP)
+;; WHEN: Mon Aug 01 18:11:58 UTC 2022
+;; MSG SIZE  rcvd: 44
+```
+
+- The “ANSWER SECTION” shows an A record for `mysql` that resolves to `172.18.0.2`
+  - A (Address) record:
+    - maps a domain name to the IP (v4) address of the computer hosting the domain
+    - simplest type of DNS record, and one of the primary records used in DNS servers
+  - Docker was able to resolve `mysql` to the IP address of the container that had that network alias
+  - our app only simply needs to connect to a host named `mysql` and it’ll talk to the database
+
+#### Run your app with MySQL
+
+- The todo app supports the setting of a few environment variables to specify MySQL connection settings
+  - see [`app/src/persistence/index.js`](app/src/persistence/index.js), [`app/src/persistence/mysql.js`](app/src/persistence/mysql.js)
+- Note: while using env vars to set connection settings is generally ok for development, it is **HIGHLY DISCOURAGED** when running applications in production
+  - see <https://diogomonica.com/2017/03/27/why-you-shouldnt-use-env-variables-for-secret-data/>
+  - a more secure mechanism is to use the secret support provided by your container orchestration framework
+  - in most cases, these secrets are mounted as files in the running container
+  - many apps (including the MySQL image and the todo app) also support env vars with a `_FILE` suffix to point to a file containing the variable
+  - e.g., setting the `MYSQL_PASSWORD_FILE` var will cause the app to use the contents of the referenced file as the connection password
+- Note: for MySQL versions 8.0 and higher, include the following commands in `mysql`:
+  - see also <https://dev.mysql.com/doc/refman/8.0/en/upgrading-from-previous-series.html#upgrade-caching-sha2-password>
+
+```text
+mysql> ALTER USER 'root' IDENTIFIED WITH mysql_native_password BY 'secret';
+mysql> flush privileges;
+```
+
+- Connect the container to our app network
+  - `docker run -dp 3000:3000 -w /app -v "$(pwd):/app" --network todo-app -e MYSQL_HOST=mysql -e MYSQL_USER=root -e MYSQL_PASSWORD=secret -e MYSQL_DB=todos node:12-alpine sh -c "yarn install && yarn run dev"`
+
+```console
+$ docker run -dp 3000:3000 -w /app -v "$(pwd):/app" --network todo-app -e MYSQL_HOST=mysql -e MYSQL_USER=root -e MYSQL_PASSWORD=secret -e MYSQL_DB=todos node:12-alpine sh -c "yarn install && yarn run dev"
+b79c8faaae6d39009b40926ff3cb4d4b988c9ab911b3cdc0e247831954b5aa86
+
+$ docker logs b79c8faaae6d39009b40926ff3cb4d4b988c9ab911b3cdc0e247831954b5aa86
+yarn install v1.22.18
+[1/4] Resolving packages...
+warning Resolution field "ansi-regex@5.0.1" is incompatible with requested version "ansi-regex@^2.0.0"
+warning Resolution field "ansi-regex@5.0.1" is incompatible with requested version "ansi-regex@^3.0.0"
+[2/4] Fetching packages...
+[3/4] Linking dependencies...
+[4/4] Building fresh packages...
+Done in 7.36s.
+yarn run v1.22.18
+$ nodemon src/index.js
+[nodemon] 2.0.13
+[nodemon] to restart at any time, enter `rs`
+[nodemon] watching path(s): *.*
+[nodemon] watching extensions: js,mjs,json
+[nodemon] starting `node src/index.js`
+Waiting for mysql:3306.
+Connected!
+Connected to mysql db at host mysql
+Listening on port 3000
+```
+
+- Open the app in your browser and add a few items to your todo list
+- Connect to the mysql database and prove that the items are being written to the database 
+  - `docker exec -it <mysql-container-id> mysql -p todos`
+
+```console
+$ docker ps
+CONTAINER ID   IMAGE            COMMAND                  CREATED         STATUS         PORTS                                       NAMES
+b79c8faaae6d   node:12-alpine   "docker-entrypoint.s…"   7 minutes ago   Up 7 minutes   0.0.0.0:3000->3000/tcp, :::3000->3000/tcp   jovial_moore
+11cf51316e2b   mysql:5.7        "docker-entrypoint.s…"   8 minutes ago   Up 8 minutes   3306/tcp, 33060/tcp                         beautiful_wu
+
+$ docker exec -it 11cf51316e2b mysql -p todos
+Enter password: 
+Reading table information for completion of table and column names
+...
+mysql> select * from todo_items;
++--------------------------------------+------+-----------+
+| id                                   | name | completed |
++--------------------------------------+------+-----------+
+| 6ac6cbdb-48fe-4405-9c37-619217ea797e | qwer |         0 |
+| cdc4125a-dd50-43e8-af8c-bb0c92ef5c61 | asdf |         0 |
+| cbde99fb-fea6-4b66-bc0a-8c981e8ef832 | zxcv |         0 |
++--------------------------------------+------+-----------+
+3 rows in set (0.00 sec)
+
+mysql> exit
+Bye
+```
+
 ## Sources
 
 - "Docker Overview." _Docker Documentation_, 18 July 2022, [docs.docker.com/get-started/overview/](https://docs.docker.com/get-started/overview/). Accessed 18 July 2022.
@@ -687,4 +897,5 @@ Listening on port 3000
 - "Share the Application." _Docker Documentation_, 22 July 2022, [docs.docker.com/get-started/04_sharing_app/](https://docs.docker.com/get-started/04_sharing_app/). Accessed 24 July 2022.
 - "Persist the DB." _Docker Documentation_, 25 July 2022, [docs.docker.com/get-started/05_persisting_data/](https://docs.docker.com/get-started/05_persisting_data/). Accessed 26 July 2022.
 - "Use Bind Mounts." _Docker Documentation_, 27 July 2022, [docs.docker.com/get-started/06_bind_mounts/](https://docs.docker.com/get-started/06_bind_mounts/). Accessed 28 July 2022.
+- "Multi Container Apps." _Docker Documentation_, Aug. 2022, [docs.docker.com/get-started/07_multi_container/](https://docs.docker.com/get-started/07_multi_container/). Accessed 1 August 2022.
 - "Dockerfile Reference." _Docker Documentation_, 22 July 2022, [docs.docker.com/engine/reference/builder/](https://docs.docker.com/engine/reference/builder/). Accessed 23 July 2022.
