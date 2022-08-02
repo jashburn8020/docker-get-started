@@ -32,6 +32,11 @@
       * [Start MySQL](#start-mysql)
       * [Connect to MySQL](#connect-to-mysql)
       * [Run your app with MySQL](#run-your-app-with-mysql)
+    * [Use Docker Compose](#use-docker-compose)
+      * [Define the app service](#define-the-app-service)
+      * [Define the MySQL service](#define-the-mysql-service)
+      * [Run the application stack](#run-the-application-stack)
+      * [Tear it all down](#tear-it-all-down)
   * [Sources](#sources)
 <!-- TOC -->
 
@@ -887,6 +892,155 @@ mysql> exit
 Bye
 ```
 
+### Use Docker Compose
+
+- A tool to help define and share multi-container applications
+- A YAML file to define the services and with a single command, can spin everything up or tear it all down
+- Advantages:
+  - define your application stack in a file
+  - version-control it in your project repo
+  - contributors to your project would only need to clone your repo and start the compose app
+- At the root of the app project, create a file named [`compose.yaml`](app/compose.yaml)
+
+#### Define the app service
+
+- The command we were using to define our app container:
+
+```text
+docker run -dp 3000:3000 \
+-w /app -v "$(pwd):/app" \
+--network todo-app \
+-e MYSQL_HOST=mysql \
+-e MYSQL_USER=root \
+-e MYSQL_PASSWORD=secret \
+-e MYSQL_DB=todos \
+node:12-alpine \
+sh -c "yarn install && yarn run dev"
+```
+
+- The `app` service in `compose.yaml`:
+
+```yaml
+services:
+  app:
+    image: node:12-alpine
+    command: sh -c "yarn install && yarn run dev"
+    ports:
+      - target: 3000
+        published: 3000
+        mode: host
+    working_dir: /app
+    volumes:
+      - type: bind
+        source: ./
+        target: /app
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_USER: root
+      MYSQL_PASSWORD: secret
+      MYSQL_DB: todos
+```
+
+- Notes:
+  - `app`: the service name can be anything and it will automatically become a network alias
+    - see <https://docs.docker.com/compose/compose-file/#services-top-level-element>
+  - `ports`: long syntax is used here
+    - see <https://docs.docker.com/compose/compose-file/#ports>
+  - `volumes`: long syntax is used here
+    - see <https://docs.docker.com/compose/compose-file/#volumes>
+  - `environment`: can use either an array or a map
+    - see <https://docs.docker.com/compose/compose-file/#environment>
+
+#### Define the MySQL service
+
+- The command that we used to define the MySQL container:
+
+```text
+docker run -d \
+--network todo-app --network-alias mysql \
+-v todo-mysql-data:/var/lib/mysql \
+-e MYSQL_ROOT_PASSWORD=secret \
+-e MYSQL_DATABASE=todos \
+mysql:5.7
+```
+
+- The `mysql` service in `compose.yaml`:
+
+```yaml
+services:
+  app:
+    # The app service definition
+  mysql:
+    image: mysql:5.7
+    volumes:
+      - type: volume
+        source: todo-mysql-data
+        target: /var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: todos
+
+volumes:
+  todo-mysql-data:
+```
+
+- Notes:
+  - top-level `volumes`: the `todo-mysql-data` named volume is not create automatically when running with Compose, unlike with `docker run`
+    - need to define the volume in the top-level `volumes:` section and then specify the mountpoint in the service config
+    - by simply providing only the volume name, the default options are used
+    - see <https://docs.docker.com/compose/compose-file/#volumes-top-level-element>
+
+#### Run the application stack
+
+- Make sure no other copies of the app/db are running
+- Start up the application stack
+  - `docker compose up -d`
+    - the `-d` flag to run everything in the background
+
+```console
+$ docker compose up -d
+[+] Running 4/4
+ ⠿ Network app_default           Created                                   0.0s
+ ⠿ Volume "app_todo-mysql-data"  Created                                   0.0s
+ ⠿ Container app-app-1           Started                                   0.5s
+ ⠿ Container app-mysql-1         Started                                   0.5s
+
+$ docker ps
+CONTAINER ID   IMAGE            COMMAND                  CREATED         STATUS         PORTS                                       NAMES
+eee8d0219dd2   node:12-alpine   "docker-entrypoint.s…"   4 minutes ago   Up 4 minutes   0.0.0.0:3000->3000/tcp, :::3000->3000/tcp   app-app-1
+6545ba1749eb   mysql:5.7        "docker-entrypoint.s…"   4 minutes ago   Up 4 minutes   3306/tcp, 33060/tcp                         app-mysql-1
+```
+
+- Look at the logs using the `docker compose logs -f` command
+  - the logs from each of the services interleaved into a single stream
+    - useful when you want to watch for timing-related issues
+    - the `-f` flag “follows” the log, so will give you live output as it’s generated
+  - the service name is displayed at the beginning of the line (often colored) to help distinguish messages
+  - if you want to view the logs for a specific service, you can add the service name to the end of the logs command (for example, `docker-compose logs -f app`)
+- Waiting for the DB before starting the app 
+  - when the app is starting up, it actually sits and waits for MySQL to be up and ready before trying to connect to it
+  - Docker doesn't have any built-in support to wait for another container to be fully up, running, and ready before starting another container
+  - for Node-based projects, you can use the [wait-port dependency](https://github.com/dwmkerr/wait-port)
+    - similar projects exist for other languages/frameworks
+
+#### Tear it all down
+
+- When you’re ready to tear it all down, run `docker compose down`
+  - the containers will stop and the network will be removed
+  - named volumes in your compose file are NOT removed
+    - add the `--volumes` flag if you want to remove the volumes
+
+```console
+$ docker compose down --volumes
+[+] Running 4/4
+ ⠿ Container app-mysql-1       Removed                                     3.9s
+ ⠿ Container app-app-1         Removed                                     0.3s
+ ⠿ Network app_default         Removed                                     0.1s
+ ⠿ Volume app_todo-mysql-data  Removed                                     0.0s
+```
+
+- Once torn down, you can switch to another project, run `docker compose up` and be ready to contribute to that project
+
 ## Sources
 
 - "Docker Overview." _Docker Documentation_, 18 July 2022, [docs.docker.com/get-started/overview/](https://docs.docker.com/get-started/overview/). Accessed 18 July 2022.
@@ -898,4 +1052,6 @@ Bye
 - "Persist the DB." _Docker Documentation_, 25 July 2022, [docs.docker.com/get-started/05_persisting_data/](https://docs.docker.com/get-started/05_persisting_data/). Accessed 26 July 2022.
 - "Use Bind Mounts." _Docker Documentation_, 27 July 2022, [docs.docker.com/get-started/06_bind_mounts/](https://docs.docker.com/get-started/06_bind_mounts/). Accessed 28 July 2022.
 - "Multi Container Apps." _Docker Documentation_, Aug. 2022, [docs.docker.com/get-started/07_multi_container/](https://docs.docker.com/get-started/07_multi_container/). Accessed 1 August 2022.
+- "Use Docker Compose." _Docker Documentation_, Aug. 2022, [docs.docker.com/get-started/08_using_compose/](https://docs.docker.com/get-started/08_using_compose/). Accessed 2 August 2022.
 - "Dockerfile Reference." _Docker Documentation_, 22 July 2022, [docs.docker.com/engine/reference/builder/](https://docs.docker.com/engine/reference/builder/). Accessed 23 July 2022.
+- "Compose Specification." _Docker Documentation_, Aug. 2022, [docs.docker.com/compose/compose-file/](https://docs.docker.com/compose/compose-file/). Accessed 2 August 2022.
