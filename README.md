@@ -37,6 +37,11 @@
       * [Define the MySQL service](#define-the-mysql-service)
       * [Run the application stack](#run-the-application-stack)
       * [Tear it all down](#tear-it-all-down)
+    * [Image-building best practices](#image-building-best-practices)
+      * [Security scanning](#security-scanning)
+      * [Image layering](#image-layering)
+      * [Layer caching](#layer-caching)
+      * [Multi-stage builds](#multi-stage-builds)
   * [Sources](#sources)
 <!-- TOC -->
 
@@ -1041,6 +1046,312 @@ $ docker compose down --volumes
 
 - Once torn down, you can switch to another project, run `docker compose up` and be ready to contribute to that project
 
+### Image-building best practices
+
+#### Security scanning
+
+- When you have built an image, scan it for security vulnerabilities using the `docker scan` command
+  - Docker has partnered with [Snyk](https://snyk.io/) to provide the vulnerability scanning service
+- Log in to Docker Hub to scan your images
+  - `docker scan --login`
+- Scan your images
+  - `docker scan <image-name>`
+- See <https://docs.docker.com/engine/scan/>
+
+```console
+$ docker scan --login
+
+To authenticate your account, open the below URL in your browser.
+After your authentication is complete, return to this prompt to start using Snyk.
+
+https://snyk.io/login?token=<token>&utm_medium=Partner&utm_source=Docker&utm_campaign=Docker-Desktop-2020&os=linux&docker=true
+
+
+Your account has been authenticated. Snyk is now ready to be used.
+
+$ docker scan getting-started
+
+Testing getting-started...
+
+✗ High severity vulnerability found in openssl/libcrypto1.1
+  Description: Inadequate Encryption Strength
+  Info: https://snyk.io/vuln/SNYK-ALPINE315-OPENSSL-2941810
+  Introduced through: openssl/libcrypto1.1@1.1.1n-r0, openssl/libssl1.1@1.1.1n-r0, apk-tools/apk-tools@2.12.7-r3, libretls/libretls@3.3.4-r3, python2/python2@2.7.18-r4
+  From: openssl/libcrypto1.1@1.1.1n-r0
+  From: openssl/libssl1.1@1.1.1n-r0 > openssl/libcrypto1.1@1.1.1n-r0
+  From: apk-tools/apk-tools@2.12.7-r3 > openssl/libcrypto1.1@1.1.1n-r0
+  and 6 more...
+  Fixed in: 1.1.1q-r0
+
+------------ Detected 6 vulnerabilities for node@12.22.12 ------------ 
+
+
+✗ Medium severity vulnerability found in node
+  Description: DNS Rebinding
+  Info: https://snyk.io/vuln/SNYK-UPSTREAM-NODE-2946423
+  Introduced through: node@12.22.12
+  From: node@12.22.12
+  Fixed in: 14.20.0, 16.16.0, 18.5.0
+
+...
+
+Organization:      jashburn8020
+Package manager:   apk
+Project name:      docker-image|getting-started
+Docker image:      getting-started
+Platform:          linux/amd64
+Base image:        node:12.22.12-alpine3.15
+Licenses:          enabled
+
+Tested 39 dependencies for known issues, found 7 issues.
+
+Base Image                Vulnerabilities  Severity
+node:12.22.12-alpine3.15  7                0 critical, 1 high, 6 medium, 0 low
+
+Recommendations for base image upgrade:
+
+Major upgrades
+Base Image               Vulnerabilities  Severity
+node:fermium-alpine3.15  0                0 critical, 0 high, 0 medium, 0 low
+
+Alternative image types
+Base Image                  Vulnerabilities  Severity
+node:18.6.0-slim            45               0 critical, 1 high, 0 medium, 44 low
+node:16.16.0-bullseye-slim  45               0 critical, 1 high, 0 medium, 44 low
+node:18.5.0-buster-slim     71               0 critical, 1 high, 0 medium, 70 low
+
+
+-------------------------------------------------------
+
+Testing getting-started...
+
+Tested 190 dependencies for known issues, found 7 issues.
+
+
+Issues to fix by upgrading:
+
+  Upgrade sqlite3@5.0.2 to sqlite3@5.0.3 to fix
+  ✗ Regular Expression Denial of Service (ReDoS) [Low Severity][https://snyk.io/vuln/SNYK-JS-TAR-1536758] in tar@2.2.2
+    introduced by sqlite3@5.0.2 > node-gyp@3.8.0 > tar@2.2.2
+...
+
+
+
+Organization:      jashburn8020
+Package manager:   yarn
+Target file:       /app/package.json
+Project name:      101-app
+Docker image:      getting-started
+Licenses:          enabled
+
+
+Tested 2 projects, 2 contained vulnerable paths.
+```
+
+- You can also [configure Docker Hub](https://docs.docker.com/docker-hub/vulnerability-scanning/) (paid subscription) to scan all newly pushed images automatically
+
+#### Image layering
+
+- Use the `docker image history` command to see the command that was used to create each layer within an image
+  - see the size of each layer to help diagnose large images
+
+```console
+$ docker image history getting-started
+IMAGE          CREATED        CREATED BY                                      SIZE      COMMENT
+2c0bb796933b   10 days ago    /bin/sh -c #(nop)  EXPOSE 3000                  0B        
+8c97124a9f9e   10 days ago    /bin/sh -c #(nop)  CMD ["node" "src/index.js…   0B        
+5d27ac92cb88   10 days ago    /bin/sh -c yarn install --production            86MB      
+d463bb69b63d   10 days ago    /bin/sh -c #(nop) COPY dir:c65361744edcce5e1…   4.62MB    
+805e1ef0150d   10 days ago    /bin/sh -c #(nop) WORKDIR /app                  0B        
+1391e56b4519   10 days ago    /bin/sh -c apk add --no-cache python2 g++ ma…   223MB     
+bb6d28039b8c   3 months ago   /bin/sh -c #(nop)  CMD ["node"]                 0B        
+<missing>      3 months ago   /bin/sh -c #(nop)  ENTRYPOINT ["docker-entry…   0B        
+<missing>      3 months ago   /bin/sh -c #(nop) COPY file:4d192565a7220e13…   388B      
+<missing>      3 months ago   /bin/sh -c apk add --no-cache --virtual .bui…   7.84MB    
+<missing>      3 months ago   /bin/sh -c #(nop)  ENV YARN_VERSION=1.22.18     0B        
+<missing>      3 months ago   /bin/sh -c addgroup -g 1000 node     && addu…   77.6MB    
+<missing>      3 months ago   /bin/sh -c #(nop)  ENV NODE_VERSION=12.22.12    0B        
+<missing>      4 months ago   /bin/sh -c #(nop)  CMD ["/bin/sh"]              0B        
+<missing>      4 months ago   /bin/sh -c #(nop) ADD file:5d673d25da3a14ce1…   5.57MB
+```
+
+- Each of the lines represents a layer in the image
+  - the base at the bottom and the newest layer at the top
+  - add the `--no-trunc` flag to get the full output of truncated lines
+- Image layers
+  - each layer is an image itself 
+  - each layer stores the changes compared to the image it's based on
+  - an image can consist of a single layer
+  - each instruction in a Dockerfile results in a layer
+  - except for multi-stage builds, where usually only the layers in the final image are pushed, or when an image is squashed to a single layer
+  - layers are used to avoid transferring redundant information and skip build steps which have not changed (according to the Docker cache)
+
+#### Layer caching
+
+- Original [Dockerfile](app/Dockerfile):
+
+```dockerfile
+# syntax=docker/dockerfile:1
+FROM node:12-alpine
+RUN apk add --no-cache python2 g++ make
+WORKDIR /app
+COPY . .
+RUN yarn install --production
+CMD ["node", "src/index.js"]
+EXPOSE 3000
+```
+
+- Once a layer changes, all downstream layers have to be recreated as well
+- When we made a change to the image, the yarn dependencies had to be reinstalled
+  - to avoid this, restructure the Dockerfile to help support the caching of the dependencies
+  - for Node-based applications, those dependencies are defined in the `package.json` file
+  - if we copied only that file in first, install the dependencies, and then copy in everything else, then we only recreate the yarn dependencies if there was a change to the `package.json`
+
+- Updated Dockerfile, [Dockerfile_cachedep:](app/Dockerfile_cachedep)
+
+```dockerfile
+# syntax=docker/dockerfile:1
+FROM node:12-alpine
+RUN apk add --no-cache python2 g++ make
+WORKDIR /app
+COPY package.json yarn.lock ./
+RUN yarn install --production
+COPY . .
+CMD ["node", "src/index.js"]
+EXPOSE 3000
+```
+
+- Create an updated Dockerfile as above to copy in the `package.json` first, install dependencies, and then copy everything else in
+- Create a file named `.dockerignore` in the same folder as the Dockerfile with the following contents
+  - to selectively copy only image relevant files
+  - in this case, the `node_modules` folder should be omitted in the second `COPY` step because otherwise, it would possibly overwrite files which were created by the command in the `RUN` step
+  - see also
+    - <https://docs.docker.com/engine/reference/builder/#dockerignore-file>
+    - <https://nodejs.org/en/docs/guides/nodejs-docker-webapp/>
+
+```dockerignore
+node_modules
+```
+
+- Build a new image using `docker build`
+
+```console
+$ docker build -f Dockerfile_cachedep -t getting-started .
+Sending build context to Docker daemon  4.658MB
+Step 1/8 : FROM node:12-alpine
+ ---> bb6d28039b8c
+Step 2/8 : RUN apk add --no-cache python2 g++ make
+ ---> Using cache
+ ---> 1391e56b4519
+Step 3/8 : WORKDIR /app
+ ---> Using cache
+ ---> 805e1ef0150d
+Step 4/8 : COPY package.json yarn.lock ./
+ ---> e8ea77e6ddea
+Step 5/8 : RUN yarn install --production
+ ---> Running in 151fddd00d24
+yarn install v1.22.18
+[1/4] Resolving packages...
+warning Resolution field "ansi-regex@5.0.1" is incompatible with requested version "ansi-regex@^2.0.0"
+warning Resolution field "ansi-regex@5.0.1" is incompatible with requested version "ansi-regex@^3.0.0"
+[2/4] Fetching packages...
+[3/4] Linking dependencies...
+[4/4] Building fresh packages...
+Done in 7.05s.
+Removing intermediate container 151fddd00d24
+ ---> 7a3dc7870fbf
+Step 6/8 : COPY . .
+ ---> af089a383d0c
+Step 7/8 : CMD ["node", "src/index.js"]
+ ---> Running in 6774af7a5bef
+Removing intermediate container 6774af7a5bef
+ ---> a75576978ce4
+Step 8/8 : EXPOSE 3000
+ ---> Running in 9065e03211d5
+Removing intermediate container 9065e03211d5
+ ---> a47397c367e3
+Successfully built a47397c367e3
+Successfully tagged getting-started:latest
+```
+
+- Make a change to the `src/static/index.html` file (like change the `<title>` to say “The Awesome Todo App”).
+- Build the Docker image again
+  - the build should be much faster with more steps having `Using cache`
+
+```console
+$ docker build -f Dockerfile_cachedep -t getting-started .
+Sending build context to Docker daemon  4.658MB
+Step 1/8 : FROM node:12-alpine
+ ---> bb6d28039b8c
+Step 2/8 : RUN apk add --no-cache python2 g++ make
+ ---> Using cache
+ ---> 1391e56b4519
+Step 3/8 : WORKDIR /app
+ ---> Using cache
+ ---> 805e1ef0150d
+Step 4/8 : COPY package.json yarn.lock ./
+ ---> Using cache
+ ---> e8ea77e6ddea
+Step 5/8 : RUN yarn install --production
+ ---> Using cache
+ ---> 7a3dc7870fbf
+Step 6/8 : COPY . .
+ ---> c7b8ddb50225
+Step 7/8 : CMD ["node", "src/index.js"]
+ ---> Running in 901983261ac2
+Removing intermediate container 901983261ac2
+ ---> 7a88eaf07152
+Step 8/8 : EXPOSE 3000
+ ---> Running in bad107bc00df
+Removing intermediate container bad107bc00df
+ ---> 0ed65bc88451
+Successfully built 0ed65bc88451
+Successfully tagged getting-started:latest
+```
+
+#### Multi-stage builds
+
+- Multi-stage builds are a tool to help use multiple stages to create an image
+  - separate build-time dependencies from runtime dependencies
+  - reduce overall image size by shipping only what your app needs to run
+- Maven/Tomcat example
+  - when building Java-based applications, a JDK is needed to compile the source code to Java bytecode - not needed in production
+  - you might be using tools like Maven or Gradle to help build the app - not needed in the final image
+  - multi-stage build:
+    - use one stage (called `build`) to perform the actual Java build using Maven
+    - in the second stage (starting at `FROM tomcat`), copy in files from the `build` stage
+    - the final image is only the last stage being created (which can be overridden using the `--target` flag)
+
+```dockerfile
+# syntax=docker/dockerfile:1
+FROM maven AS build
+WORKDIR /app
+COPY . .
+RUN mvn package
+
+FROM tomcat
+COPY --from=build /app/target/file.war /usr/local/tomcat/webapps
+```
+
+- React example
+  - when building React applications, we need a Node environment to compile the JS code (typically JSX), SASS stylesheets, and more into static HTML, JS, and CSS
+  - if we aren’t doing server-side rendering, we don't need a Node environment for our production build
+  - ship the static resources in a static nginx container
+
+```dockerfile
+# syntax=docker/dockerfile:1
+FROM node:12 AS build
+WORKDIR /app
+COPY package* yarn.lock ./
+RUN yarn install
+COPY public ./public
+COPY src ./src
+RUN yarn run build
+
+FROM nginx:alpine
+COPY --from=build /app/build /usr/share/nginx/html
+```
+
 ## Sources
 
 - "Docker Overview." _Docker Documentation_, 18 July 2022, [docs.docker.com/get-started/overview/](https://docs.docker.com/get-started/overview/). Accessed 18 July 2022.
@@ -1053,5 +1364,7 @@ $ docker compose down --volumes
 - "Use Bind Mounts." _Docker Documentation_, 27 July 2022, [docs.docker.com/get-started/06_bind_mounts/](https://docs.docker.com/get-started/06_bind_mounts/). Accessed 28 July 2022.
 - "Multi Container Apps." _Docker Documentation_, Aug. 2022, [docs.docker.com/get-started/07_multi_container/](https://docs.docker.com/get-started/07_multi_container/). Accessed 1 August 2022.
 - "Use Docker Compose." _Docker Documentation_, Aug. 2022, [docs.docker.com/get-started/08_using_compose/](https://docs.docker.com/get-started/08_using_compose/). Accessed 2 August 2022.
+- "Image-Building Best Practices." _Docker Documentation_, 3 Aug. 2022, [docs.docker.com/get-started/09_image_best/](https://docs.docker.com/get-started/09_image_best/). Accessed 3 August 2022.
 - "Dockerfile Reference." _Docker Documentation_, 22 July 2022, [docs.docker.com/engine/reference/builder/](https://docs.docker.com/engine/reference/builder/). Accessed 23 July 2022.
 - "Compose Specification." _Docker Documentation_, Aug. 2022, [docs.docker.com/compose/compose-file/](https://docs.docker.com/compose/compose-file/). Accessed 2 August 2022.
+- "What Are Docker Image Layers?" _Vsupalov.com_, 15 Feb. 2021, [vsupalov.com/docker-image-layers/](https://vsupalov.com/docker-image-layers/). Accessed 3 August 2022.
