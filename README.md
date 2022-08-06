@@ -50,6 +50,7 @@
       * [Create a `.dockerignore` file](#create-a-dockerignore-file)
       * [Build an image](#build-an-image)
       * [Build image failure with `mvnw dependency:go-offline`](#build-image-failure-with-mvnw-dependencygo-offline)
+    * [Run your image as a container](#run-your-image-as-a-container)
   * [Sources](#sources)
 <!-- TOC -->
 
@@ -1490,6 +1491,18 @@ Downloaded from central: https://repo.maven.apache.org/maven2/org/ehcache/ehcach
 
 - This new problem occurs because none of the repositories, including the above mirrors, contains `javax/xml/bind/jaxb-api/2.3.0-b161121.1438/jaxb-api-2.3.0-b161121.1438.pom`
 - A further [workaround](https://stackoverflow.com/a/72150668) involves adding `<dependencyManagement>` to [`pom.xml`](spring-petclinic/pom.xml) so that `jaxb-api 2.3.1` is used instead of the above problematic version
+
+### Run your image as a container
+
+- Run the image
+  - `docker run -d -p 8080:8080 --name springboot-server java-docker`
+    - `--name` gives the container a specific, otherwise a random name will be assigned
+- Restart the container
+  - `docker restart springboot-server`
+- Stop the container
+  - `docker stop springboot-server`
+- Start the container
+  - `docker start springboot-server`
 
 ## Sources
 
