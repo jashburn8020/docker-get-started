@@ -1,0 +1,43 @@
+version: '3.8'
+services:
+  petclinic:
+
+    # Build configuration for creating container image from source.
+    build:
+
+      # Defines either a path to a directory containing a Dockerfile, or a url to a git repository.
+      # When the value supplied is a relative path, it is relative to the location of the Compose file.
+      context: .
+
+      # An alternate Dockerfile; a relative path is resolved from the build context
+      dockerfile: Dockerfile_multistage
+
+      # The stage to build as defined inside a multi-stage Dockerfile.
+      target: development
+    ports:
+      - 8000:8000
+      - 8080:8080
+    environment:
+      - SERVER_PORT=8080
+
+      # `mysqlserver`: service resolution is set up to use the `mysqlserver` service name
+      - MYSQL_URL=jdbc:mysql://mysqlserver/petclinic
+    volumes:
+      - ./:/app
+
+  mysqlserver:
+    image: mysql:8.0
+    ports:
+      - 3306:3306
+    environment:
+      - MYSQL_ROOT_PASSWORD=
+      - MYSQL_ALLOW_EMPTY_PASSWORD=true
+      - MYSQL_USER=petclinic
+      - MYSQL_PASSWORD=petclinic
+      - MYSQL_DATABASE=petclinic
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - mysql_config:/etc/mysql/conf.d
+volumes:
+  mysql_data:
+  mysql_config:

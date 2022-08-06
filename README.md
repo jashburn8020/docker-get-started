@@ -51,6 +51,11 @@
       * [Build an image](#build-an-image)
       * [Build image failure with `mvnw dependency:go-offline`](#build-image-failure-with-mvnw-dependencygo-offline)
     * [Run your image as a container](#run-your-image-as-a-container)
+    * [Use containers for development](#use-containers-for-development)
+      * [Run a database in a container](#run-a-database-in-a-container)
+      * [Multi-stage Dockerfile for development](#multi-stage-dockerfile-for-development)
+      * [Use Compose to develop locally](#use-compose-to-develop-locally)
+      * [Connect a Debugger](#connect-a-debugger)
   * [Sources](#sources)
 <!-- TOC -->
 
@@ -1216,7 +1221,7 @@ EXPOSE 3000
   - for Node-based applications, those dependencies are defined in the `package.json` file
   - if we copied only that file in first, install the dependencies, and then copy in everything else, then we only recreate the yarn dependencies if there was a change to the `package.json`
 
-- Updated Dockerfile, [Dockerfile_cachedep:](app/Dockerfile_cachedep)
+- Updated Dockerfile (see [Dockerfile_cachedep](app/Dockerfile_cachedep)):
 
 ```dockerfile
 # syntax=docker/dockerfile:1
@@ -1491,6 +1496,7 @@ Downloaded from central: https://repo.maven.apache.org/maven2/org/ehcache/ehcach
 
 - This new problem occurs because none of the repositories, including the above mirrors, contains `javax/xml/bind/jaxb-api/2.3.0-b161121.1438/jaxb-api-2.3.0-b161121.1438.pom`
 - A further [workaround](https://stackoverflow.com/a/72150668) involves adding `<dependencyManagement>` to [`pom.xml`](spring-petclinic/pom.xml) so that `jaxb-api 2.3.1` is used instead of the above problematic version
+  - `jaxb-api 2.3.1` can be downloaded from the "central" repository ([Maven Central Repository](https://mvnrepository.com/repos/central))
 
 ### Run your image as a container
 
@@ -1503,6 +1509,273 @@ Downloaded from central: https://repo.maven.apache.org/maven2/org/ehcache/ehcach
   - `docker stop springboot-server`
 - Start the container
   - `docker start springboot-server`
+
+### Use containers for development
+
+#### Run a database in a container
+
+- Create a couple of volumes that Docker can manage to store our persistent data and configuration
+  - with **managed volumes** instead of using bind mounts
+  - one for the data and one for configuration of MySQL
+
+```console
+$ docker volume create mysql_data
+mysql_data
+
+$ docker volume create mysql_config
+mysql_config
+
+$ docker volume ls
+DRIVER    VOLUME NAME
+local     TMP
+local     mysql_config
+local     mysql_data
+local     todo-mysql-data
+```
+
+- Create a **user-defined bridge network** that our application and database will use to talk to each other
+  - gives us a nice DNS lookup service which we can use when creating our connection string
+
+```console
+$ docker network create mysqlnet
+5e0e902873b50c23ab9f85baaa8c27b0b46e90575157616cdeb19c5861875dcc
+
+$ docker network ls
+NETWORK ID     NAME       DRIVER    SCOPE
+91da8e6e23c8   bridge     bridge    local
+bb85c7780343   host       host      local
+5e0e902873b5   mysqlnet   bridge    local
+1ff9908fd506   none       null      local
+```
+
+- Run MySQL in a container and attach to the volumes and network we created above
+  - Docker pulls the image from Hub and runs it locally
+  - `--rm`: automatically remove the container when it exits
+
+```console
+$ docker run -it --rm -d -v mysql_data:/var/lib/mysql \
+-v mysql_config:/etc/mysql/conf.d \
+--network mysqlnet \
+--name mysqlserver \
+-e MYSQL_USER=petclinic -e MYSQL_PASSWORD=petclinic \
+-e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=petclinic \
+-p 3306:3306 mysql:8.0
+Unable to find image 'mysql:8.0' locally
+8.0: Pulling from library/mysql
+32c1bf40aba1: Pull complete 
+3ac22f3a638d: Pull complete 
+b1e7273ed05e: Pull complete 
+20be45a0c6ab: Pull complete 
+410a229693ff: Pull complete 
+1ce71e3a9b88: Pull complete 
+c93c823af05b: Pull complete 
+c6752c4d09c7: Pull complete 
+d7f2cfe3efcb: Pull complete 
+916f32cb0394: Pull complete 
+0d62a5f9a14f: Pull complete 
+Digest: sha256:ce2ae3bd3e9f001435c4671cf073d1d5ae55d138b16927268474fc54ba09ed79
+Status: Downloaded newer image for mysql:8.0
+06369a18509b8de175c9ad52b5f912aa5c2d360313a862dc516317f797ed6beb
+
+$ docker ps
+CONTAINER ID   IMAGE       COMMAND                  CREATED          STATUS          PORTS                                                  NAMES
+06369a18509b   mysql:8.0   "docker-entrypoint.s…"   50 seconds ago   Up 49 seconds   0.0.0.0:3306->3306/tcp, :::3306->3306/tcp, 33060/tcp   mysqlserver
+```
+
+- Update the Dockerfile (see [Dockerfile_mysql](spring-petclinic/Dockerfile_mysql)) to activate the MySQL Spring profile defined in the application and switch from an in-memory H2 database to the MySQL server we just created
+
+```dockerfile
+CMD ["./mvnw", "spring-boot:run", "-Dspring-boot.run.profiles=mysql"]
+```
+
+- Build the image
+
+```console
+$ docker build -f Dockerfile_mysql -t java-docker .
+[+] Building 1.1s (15/15) FINISHED                                                    
+ => [internal] load build definition from Dockerfile_mysql                       0.0s
+ => => transferring dockerfile: 682B                                             0.0s
+ => [internal] load .dockerignore                                                0.0s
+ => => transferring context: 47B                                                 0.0s
+ => resolve image config for docker.io/docker/dockerfile:1                       0.9s
+ => CACHED docker-image://docker.io/docker/dockerfile:1@sha256:443aab4ca21183e0  0.0s
+ => [internal] load build definition from Dockerfile_mysql                       0.0s
+ => [internal] load .dockerignore                                                0.0s
+ => [internal] load metadata for docker.io/library/openjdk:16-alpine3.13         0.0s
+ => [1/6] FROM docker.io/library/openjdk:16-alpine3.13                           0.0s
+ => [internal] load build context                                                0.0s
+ => => transferring context: 1.22MB                                              0.0s
+ => CACHED [2/6] WORKDIR /app                                                    0.0s
+ => CACHED [3/6] COPY .mvn/ .mvn                                                 0.0s
+ => CACHED [4/6] COPY mvnw pom.xml ./                                            0.0s
+ => CACHED [5/6] RUN ./mvnw dependency:go-offline                                0.0s
+ => CACHED [6/6] COPY src ./src                                                  0.0s
+ => exporting to image                                                           0.0s
+ => => exporting layers                                                          0.0s
+ => => writing image sha256:a035f1ccac6e2300b2867b82400842bf45b43bc31c5f3354f03  0.0s
+ => => naming to docker.io/library/java-docker                                   0.0s
+```
+
+- Run the container
+  - set the `MYSQL_URL` environment variable so that our application knows what connection string to use to access the database
+
+```console
+$ docker run --rm -d \
+--name springboot-server \
+--network mysqlnet \
+-e MYSQL_URL=jdbc:mysql://mysqlserver/petclinic \
+-p 8080:8080 java-docker
+195ec5796166152e3a92c03f3c88384e46c50106a4fac030168e1a04db123132
+```
+
+- Test that our application is connected to the database and is able to list Veterinarians
+
+```console
+$ curl --request GET \
+--url http://localhost:8080/vets \
+--header 'content-type: application/json'
+```
+
+#### Multi-stage Dockerfile for development
+
+- Produce a final image which is ready for production as well as a dedicated step to produce a development image 
+  - set up the Dockerfile to start the application in debug mode in the development container so that we can connect a debugger to the running Java process
+  - see [Dockerfile_multistage](spring-petclinic/Dockerfile_multistage)
+
+#### Use Compose to develop locally
+
+- See [docker-compose.dev.yml](spring-petclinic/docker-compose.dev.yml)
+- Start our application and to confirm that it is running properly
+- Note:
+  - `docker compose up`: build the images if they do not exist and start the containers
+  - `docker compose up --build`: force-build the images even when not needed
+  - `docker compose up --no-build`: skip image-building, fails if the images aren't built beforehand
+
+```console
+$ docker compose -f docker-compose.dev.yml up --build
+[+] Building 175.4s (15/15) FINISHED                                            
+ => [internal] load build definition from Dockerfile_multistage            0.0s
+ => => transferring dockerfile: 1.11kB                                     0.0s
+ => [internal] load .dockerignore                                          0.0s
+ => => transferring context: 47B                                           0.0s
+ => resolve image config for docker.io/docker/dockerfile:1                 0.9s
+ => CACHED docker-image://docker.io/docker/dockerfile:1@sha256:443aab4ca2  0.0s
+ => [internal] load .dockerignore                                          0.0s
+ => [internal] load build definition from Dockerfile_multistage            0.0s
+ => [internal] load metadata for docker.io/library/eclipse-temurin:17-jdk  1.0s
+ => [internal] load build context                                          0.0s
+ => => transferring context: 1.22MB                                        0.0s
+ => [base 1/6] FROM docker.io/library/eclipse-temurin:17-jdk-jammy@sha25  31.7s
+ => => resolve docker.io/library/eclipse-temurin:17-jdk-jammy@sha256:515f  0.0s
+ => => sha256:d19f32bd9e4106d487f1a703fc2f09c8edadd92d 30.43MB / 30.43MB  11.9s
+ => => sha256:db6071789febff354ae91b5355ae6fdb9a28f8c7 16.66MB / 16.66MB  11.6s
+ => => sha256:d1519bcda5af6317f38dae1cc9c2bcb27caea9 192.15MB / 192.15MB  30.2s
+ => => sha256:515fb4fb3baa812627408f15614d9cbb5b340d1b399 1.21kB / 1.21kB  0.0s
+ => => sha256:f498753313c79317fbb258655492aca973415fec4ef 1.16kB / 1.16kB  0.0s
+ => => sha256:fcfc2d886c12c706a102999ec84ac954c130f6ccc3b 5.10kB / 5.10kB  0.0s
+ => => sha256:a3b5567e1b73c196e3c307522e4f5f53828bcd7fcaac62 160B / 160B  11.7s
+ => => extracting sha256:d19f32bd9e4106d487f1a703fc2f09c8edadd92db4405d47  0.4s
+ => => extracting sha256:db6071789febff354ae91b5355ae6fdb9a28f8c70312ebec  0.3s
+ => => extracting sha256:d1519bcda5af6317f38dae1cc9c2bcb27caea9ea227d1209  1.3s
+ => => extracting sha256:a3b5567e1b73c196e3c307522e4f5f53828bcd7fcaac62fc  0.0s
+ => [base 2/6] WORKDIR /app                                                0.4s
+ => [base 3/6] COPY .mvn/ .mvn                                             0.0s
+ => [base 4/6] COPY mvnw pom.xml ./                                        0.0s
+ => [base 5/6] RUN ./mvnw dependency:resolve                             140.4s
+ => [base 6/6] COPY src ./src                                              0.1s
+ => exporting to image                                                     0.5s
+ => => exporting layers                                                    0.5s
+ => => writing image sha256:6590b26803e966838ee95e823a34375a1676012a061f0  0.0s
+ => => naming to docker.io/library/spring-petclinic_petclinic              0.0s
+[+] Running 5/5
+ ⠿ Network spring-petclinic_default          Created                       0.0s
+ ⠿ Volume "spring-petclinic_mysql_data"      Created                       0.0s
+ ⠿ Volume "spring-petclinic_mysql_config"    Created                       0.0s
+ ⠿ Container spring-petclinic-petclinic-1    Created                       0.0s
+ ⠿ Container spring-petclinic-mysqlserver-1  Created                       0.1s
+Attaching to spring-petclinic-mysqlserver-1, spring-petclinic-petclinic-1
+spring-petclinic-mysqlserver-1  | 2022-08-06 16:01:17+00:00 [Note] [Entrypoint]: Entrypoint script for MySQL Server 8.0.30-1.el8 started.
+spring-petclinic-mysqlserver-1  | 2022-08-06 16:01:17+00:00 [Note] [Entrypoint]: Switching to dedicated user 'mysql'
+spring-petclinic-mysqlserver-1  | 2022-08-06 16:01:17+00:00 [Note] [Entrypoint]: Entrypoint script for MySQL Server 8.0.30-1.el8 started.
+spring-petclinic-mysqlserver-1  | 2022-08-06 16:01:17+00:00 [Note] [Entrypoint]: Initializing database files
+spring-petclinic-mysqlserver-1  | 2022-08-06T16:01:17.727540Z 0 [Warning] [MY-011068] [Server] The syntax '--skip-host-cache' is deprecated and will be removed in a future release. Please use SET GLOBAL host_cache_size=0 instead.
+spring-petclinic-mysqlserver-1  | 2022-08-06T16:01:17.728001Z 0 [System] [MY-013169] [Server] /usr/sbin/mysqld (mysqld 8.0.30) initializing of server in progress as process 42
+spring-petclinic-mysqlserver-1  | 2022-08-06T16:01:17.737308Z 1 [System] [MY-013576] [InnoDB] InnoDB initialization has started.
+spring-petclinic-mysqlserver-1  | 2022-08-06T16:01:18.106511Z 1 [System] [MY-013577] [InnoDB] InnoDB initialization has ended.
+spring-petclinic-petclinic-1    | [INFO] Scanning for projects...
+spring-petclinic-petclinic-1    | [INFO] 
+spring-petclinic-petclinic-1    | [INFO] ------------< org.springframework.samples:spring-petclinic >------------
+spring-petclinic-petclinic-1    | [INFO] Building petclinic 2.7.0-SNAPSHOT
+spring-petclinic-petclinic-1    | [INFO] --------------------------------[ jar ]---------------------------------
+spring-petclinic-petclinic-1    | [INFO] 
+spring-petclinic-petclinic-1    | [INFO] >>> spring-boot-maven-plugin:2.7.1:run (default-cli) > test-compile @ spring-petclinic >>>
+spring-petclinic-petclinic-1    | [INFO] 
+spring-petclinic-petclinic-1    | [INFO] --- spring-javaformat-maven-plugin:0.0.31:validate (default) @ spring-petclinic ---
+spring-petclinic-petclinic-1    | Downloading from spring-snapshots: https://repo.spring.io/snapshot/io/spring/javaformat/spring-javaformat-formatter/0.0.31/spring-javaformat-formatter-0.0.31.pom
+...
+Downloaded from central: https://repo.maven.apache.org/maven2/com/thoughtworks/qdox/qdox/2.0.1/qdox-2.0.1.jar (334 kB at 5.6 MB/s)
+spring-petclinic-petclinic-1    | [INFO] Changes detected - recompiling the module!
+spring-petclinic-petclinic-1    | [INFO] Compiling 23 source files to /app/target/classes
+spring-petclinic-petclinic-1    | [INFO] 
+spring-petclinic-petclinic-1    | [INFO] --- maven-resources-plugin:3.2.0:testResources (default-testResources) @ spring-petclinic ---
+spring-petclinic-petclinic-1    | [INFO] Using 'UTF-8' encoding to copy filtered resources.
+spring-petclinic-petclinic-1    | [INFO] Using 'UTF-8' encoding to copy filtered properties files.
+spring-petclinic-petclinic-1    | [INFO] skip non existing resourceDirectory /app/src/test/resources
+spring-petclinic-petclinic-1    | [INFO] 
+spring-petclinic-petclinic-1    | [INFO] --- maven-compiler-plugin:3.10.1:testCompile (default-testCompile) @ spring-petclinic ---
+spring-petclinic-petclinic-1    | [INFO] Changes detected - recompiling the module!
+spring-petclinic-petclinic-1    | [INFO] Compiling 11 source files to /app/target/test-classes
+spring-petclinic-petclinic-1    | [INFO] 
+spring-petclinic-petclinic-1    | [INFO] <<< spring-boot-maven-plugin:2.7.1:run (default-cli) < test-compile @ spring-petclinic <<<
+spring-petclinic-petclinic-1    | [INFO] 
+spring-petclinic-petclinic-1    | [INFO] 
+spring-petclinic-petclinic-1    | [INFO] --- spring-boot-maven-plugin:2.7.1:run (default-cli) @ spring-petclinic ---
+spring-petclinic-petclinic-1    | [INFO] Attaching agents: []
+spring-petclinic-petclinic-1    | Listening for transport dt_socket at address: 8000
+spring-petclinic-petclinic-1    | 16:02:35.219 [Thread-0] DEBUG org.springframework.boot.devtools.restart.classloader.RestartClassLoader - Created RestartClassLoader org.springframework.boot.devtools.restart.classloader.RestartClassLoader@4bd7e155
+spring-petclinic-petclinic-1    | 
+spring-petclinic-petclinic-1    | 
+spring-petclinic-petclinic-1    |               |\      _,,,--,,_
+spring-petclinic-petclinic-1    |              /,`.-'`'   ._  \-;;,_
+spring-petclinic-petclinic-1    |   _______ __|,4-  ) )_   .;.(__`'-'__     ___ __    _ ___ _______
+spring-petclinic-petclinic-1    |  |       | '---''(_/._)-'(_\_)   |   |   |   |  |  | |   |       |
+spring-petclinic-petclinic-1    |  |    _  |    ___|_     _|       |   |   |   |   |_| |   |       | __ _ _
+spring-petclinic-petclinic-1    |  |   |_| |   |___  |   | |       |   |   |   |       |   |       | \ \ \ \
+spring-petclinic-petclinic-1    |  |    ___|    ___| |   | |      _|   |___|   |  _    |   |      _|  \ \ \ \
+spring-petclinic-petclinic-1    |  |   |   |   |___  |   | |     |_|       |   | | |   |   |     |_    ) ) ) )
+spring-petclinic-petclinic-1    |  |___|   |_______| |___| |_______|_______|___|_|  |__|___|_______|  / / / /
+spring-petclinic-petclinic-1    |  ==================================================================/_/_/_/
+spring-petclinic-petclinic-1    | 
+spring-petclinic-petclinic-1    | :: Built with Spring Boot :: 2.7.1
+spring-petclinic-petclinic-1    | 
+spring-petclinic-petclinic-1    | 
+spring-petclinic-petclinic-1    | 2022-08-06 16:02:35.411  INFO 167 --- [  restartedMain] o.s.s.petclinic.PetClinicApplication     : Starting PetClinicApplication using Java 17.0.4 on 7d8a4dae5026 with PID 167 (/app/target/classes started by root in /app)
+spring-petclinic-petclinic-1    | 2022-08-06 16:02:35.412  INFO 167 --- [  restartedMain] o.s.s.petclinic.PetClinicApplication     : The following 1 profile is active: "mysql"
+...
+spring-petclinic-petclinic-1    | 2022-08-06 16:02:38.375  INFO 167 --- [  restartedMain] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 13 endpoint(s) beneath base path '/actuator'
+spring-petclinic-petclinic-1    | 2022-08-06 16:02:38.407  INFO 167 --- [  restartedMain] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port(s): 8080 (http) with context path ''
+spring-petclinic-petclinic-1    | 2022-08-06 16:02:38.420  INFO 167 --- [  restartedMain] o.s.s.petclinic.PetClinicApplication     : Started PetClinicApplication in 3.196 seconds (JVM running for 3.426)
+spring-petclinic-petclinic-1    | 2022-08-06 16:02:50.218  INFO 167 --- [nio-8080-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+spring-petclinic-petclinic-1    | 2022-08-06 16:02:50.219  INFO 167 --- [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+spring-petclinic-petclinic-1    | 2022-08-06 16:02:50.220  INFO 167 --- [nio-8080-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+```
+
+#### Connect a Debugger
+
+- With IntelliJ IDEA 2022.2 (Community Edition):
+  - Run > Edit Configurations...
+  - Add new run configuration... > Remote JVM Debug
+  - Name: PetClinicRemoteDebug
+  - Debugger mode: Attach to remote JVM
+  - Host: localhost
+  - Port: 8000
+  - Use module classpath: docker-get-started
+- Open [VetController.java](spring-petclinic/src/main/java/org/springframework/samples/petclinic/vet/VetController.java) in IntelliJ and add a breakpoint inside the `showResourcesVetList` method
+- Start the debug session:
+  - Run > Debug 'PetClinicRemoteDebug'
+- Call the server endpoint
+  - `curl --request GET --url http://localhost:8080/vets`
+  - you should now see the code break on the marked line
 
 ## Sources
 
@@ -1519,5 +1792,7 @@ Downloaded from central: https://repo.maven.apache.org/maven2/org/ehcache/ehcach
 - "Image-Building Best Practices." _Docker Documentation_, 3 Aug. 2022, [docs.docker.com/get-started/09_image_best/](https://docs.docker.com/get-started/09_image_best/). Accessed 3 August 2022.
 - "What Are Docker Image Layers?" _Vsupalov.com_, 15 Feb. 2021, [vsupalov.com/docker-image-layers/](https://vsupalov.com/docker-image-layers/). Accessed 3 August 2022.
 - "Build Your Java Image." _Docker Documentation_, 4 Aug. 2022, [docs.docker.com/language/java/build-images/](https://docs.docker.com/language/java/build-images/). Accessed 5 August 2022.
+- “Run Your Image as a Container.” _Docker Documentation_, 5 Aug. 2022, [docs.docker.com/language/java/run-containers/](https://docs.docker.com/language/java/run-containers/). Accessed 5 August 2022.
+- “Use Containers for Development.” _Docker Documentation_, 5 Aug. 2022, [docs.docker.com/language/java/develop/](https://docs.docker.com/language/java/develop/). Accessed 6 August 2022.
 - "Dockerfile Reference." _Docker Documentation_, 22 July 2022, [docs.docker.com/engine/reference/builder/](https://docs.docker.com/engine/reference/builder/). Accessed 23 July 2022.
 - "Compose Specification." _Docker Documentation_, Aug. 2022, [docs.docker.com/compose/compose-file/](https://docs.docker.com/compose/compose-file/). Accessed 2 August 2022.
