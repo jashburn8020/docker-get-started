@@ -1,0 +1,30 @@
+<settings xmlns="https://maven.apache.org/SETTINGS/1.2.0"
+		  xmlns:xsi="https://www.w3.org/2001/XMLSchema-instance"
+		  xsi:schemaLocation="https://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+	<mirrors>
+		<mirror>
+			<id>releases.java.net.ssl</id>
+			<mirrorOf>releases.java.net</mirrorOf>
+			<name></name>
+			<url>https://maven.java.net/content/repositories/releases/</url>
+		</mirror>
+		<mirror>
+			<id>shapshots.java.net.ssl</id>
+			<mirrorOf>shapshots.java.net</mirrorOf>
+			<name></name>
+			<url>https://maven.java.net/content/repositories/snapshots/</url>
+		</mirror>
+		<mirror>
+			<id>jvnet-nexus-staging-ssl</id>
+			<mirrorOf>jvnet-nexus-staging</mirrorOf>
+			<name></name>
+			<url>https://maven.java.net/content/repositories/staging/</url>
+		</mirror>
+		<mirror>
+			<id>netbeans-ssl</id>
+			<mirrorOf>netbeans</mirrorOf>
+			<name></name>
+			<url>https://netbeans.apidesign.org/maven2/</url>
+		</mirror>
+	</mirrors>
+</settings>

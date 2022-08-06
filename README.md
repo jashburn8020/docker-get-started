@@ -42,6 +42,14 @@
       * [Image layering](#image-layering)
       * [Layer caching](#layer-caching)
       * [Multi-stage builds](#multi-stage-builds)
+  * [Getting started with Java](#getting-started-with-java)
+    * [Build your Java image](#build-your-java-image)
+      * [Enable BuildKit](#enable-buildkit)
+      * [Test the application without Docker](#test-the-application-without-docker)
+      * [Create a Dockerfile for Java](#create-a-dockerfile-for-java)
+      * [Create a `.dockerignore` file](#create-a-dockerignore-file)
+      * [Build an image](#build-an-image)
+      * [Build image failure with `mvnw dependency:go-offline`](#build-image-failure-with-mvnw-dependencygo-offline)
   * [Sources](#sources)
 <!-- TOC -->
 
@@ -1352,6 +1360,137 @@ FROM nginx:alpine
 COPY --from=build /app/build /usr/share/nginx/html
 ```
 
+## Getting started with Java
+
+- The Java getting started guide teaches you how to create a containerized Spring Boot application using Docker
+  - clone and run a Spring Boot application with Maven
+  - create a new Dockerfile which contains instructions required to build a Java image
+  - run the newly built image as a container
+  - set up a local development environment to connect a database to the container
+  - use Docker Compose to run the Spring Boot application
+  - configure a CI/CD pipeline for your application using GitHub Actions
+  - deploy your application to the cloud
+
+### Build your Java image
+
+#### Enable BuildKit
+
+- Ensure you have enabled BuildKit on your machine
+  - BuildKit allows you to build Docker images efficiently
+  - see <https://docs.docker.com/develop/develop-images/build_enhancements/>
+- BuildKit is enabled by default for all users on Docker Desktop
+  - you don’t have to manually enable BuildKit
+- If you are running Docker on Linux, you can enable BuildKit either by using an environment variable or by making BuildKit the default setting
+- To set the BuildKit environment variable:
+
+```console
+$ DOCKER_BUILDKIT=1
+```
+
+- To enable docker BuildKit by default:
+  - set daemon configuration in `/etc/docker/daemon.json` feature to `true` and restart the daemon
+  - if the `daemon.json` file doesn't exist, create it and then add the following to the file and restart the Docker daemon
+
+```json
+{
+  "features": {
+    "buildkit" : true
+  }
+}
+```
+
+#### Test the application without Docker
+
+- The sample application is located in [`spring-petclinic`](spring-petclinic)
+  - requires Java OpenJDK version 15 or later
+  - contains an embedded version of Maven
+- Run the following command in the application directory:
+
+```console
+$ ./mvnw spring-boot:run
+```
+
+- Open a new browser and navigate to <http://localhost:8080>
+
+#### Create a Dockerfile for Java
+
+- The [Dockerfile](spring-petclinic/Dockerfile)
+
+#### Create a `.dockerignore` file
+
+- Create a [`.dockerignore` file](spring-petclinic/.dockerignore) to exclude the `target` directory, which contains output from Maven, from the Docker build context
+  - increase the performance of the build, and as a general best practice
+
+#### Build an image
+
+- Run `docker build --tag java-docker .`
+
+```console
+$ docker build --tag java-docker .
+[+] Building 375.5s (15/15) FINISHED                                                              
+ => [internal] load build definition from Dockerfile                                         0.0s
+ => => transferring dockerfile: 603B                                                         0.0s
+ => [internal] load .dockerignore                                                            0.0s
+ => => transferring context: 34B                                                             0.0s
+ => resolve image config for docker.io/docker/dockerfile:1                                   0.9s
+ => CACHED docker-image://docker.io/docker/dockerfile:1@sha256:443aab4ca21183e069e7d8b2dc68  0.0s
+ => [internal] load .dockerignore                                                            0.0s
+ => [internal] load build definition from Dockerfile                                         0.0s
+ => [internal] load metadata for docker.io/library/openjdk:16-alpine3.13                     0.0s
+ => [1/6] FROM docker.io/library/openjdk:16-alpine3.13                                       0.0s
+ => [internal] load build context                                                            0.0s
+ => => transferring context: 80.45kB                                                         0.0s
+ => CACHED [2/6] WORKDIR /app                                                                0.0s
+ => [3/6] COPY .mvn/ .mvn                                                                    0.0s
+ => [4/6] COPY mvnw pom.xml ./                                                               0.1s
+ => [5/6] RUN ./mvnw dependency:go-offline                                                 373.1s
+ => [6/6] COPY src ./src                                                                     0.1s
+ => exporting to image                                                                       1.1s 
+ => => exporting layers                                                                      1.1s 
+ => => writing image sha256:4ed2da81e4b3e5cae6dfebf0a3f1d1db283450b355f3a7532332926a3d94238  0.0s 
+ => => naming to docker.io/library/java-docker                                               0.0s 
+```
+
+#### Build image failure with `mvnw dependency:go-offline`
+
+- When building the image (Spring PetClinic 2.7.0-SNAPSHOT with Spring Boot 2.7.1) using the original implementation from <https://github.com/spring-projects/spring-petclinic> with `RUN ./mvnw dependency:go-offline` in the Dockerfile, the build fails
+  - the following is the output (with BuildKit disabled)
+
+```text
+Downloaded from central: https://repo.maven.apache.org/maven2/org/ehcache/ehcache/3.10.0/ehcache-3.10.0.jar (1.8 MB at 4.9 MB/s)
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  05:32 min
+[INFO] Finished at: 2022-08-04T00:45:08Z
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-dependency-plugin:3.3.0:go-offline (default-cli) on project spring-petclinic: org.eclipse.aether.resolution.DependencyResolutionException: Failed to collect dependencies at org.ehcache:ehcache:jar:3.10.0
+-> org.glassfish.jaxb:jaxb-runtime:jar:2.3.0-b170127.1453
+-> org.glassfish.jaxb:jaxb-core:jar:2.3.0-b170127.1453
+-> javax.xml.bind:jaxb-api:jar:2.3.0-b161121.1438: Failed to read artifact descriptor for javax.xml.bind:jaxb-api:jar:2.3.0-b161121.1438: Could not transfer artifact javax.xml.bind:jaxb-api:pom:2.3.0-b161121.1438 from/to maven-default-http-blocker (http://0.0.0.0/): Blocked mirror for repositories: [releases.java.net (http://maven.java.net/content/repositories/releases/, default, releases+snapshots), shapshots.java.net (http://maven.java.net/content/repositories/snapshots/, default, releases+snapshots), jvnet-nexus-staging (http://maven.java.net/content/repositories/staging/, default, releases+snapshots), netbeans (http://bits.netbeans.org/nexus/content/groups/netbeans, default, releases)] -> [Help 1]
+```
+
+- This is due to Maven 3.8.1 onwards [blocking downloads](https://maven.apache.org/docs/3.8.1/release-notes.html#cve-2021-26291) from repositories that refer to a URL over HTTP to prevent Man-In-The-Middle-Attack
+  - Maven 3.8.2 was used above
+- A [workaround](https://github.com/spring-projects/spring-petclinic/issues/996) for the purpose of the tutorial involves creating [repository mirrors](https://maven.apache.org/guides/mini/guide-mirror-settings.html) that use HTTP URLs:
+  - [`spring-petclinic/.mvn/maven.config`](spring-petclinic/.mvn/maven.config)
+  - [`spring-petclinic/.mvn/local-settings.xml`](spring-petclinic/.mvn/local-settings.xml)
+- However, applying the workaround results in a different build failure
+
+```text
+Downloaded from central: https://repo.maven.apache.org/maven2/org/ehcache/ehcache/3.10.0/ehcache-3.10.0.jar (1.8 MB at 4.9 MB/s)
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  06:23 min
+[INFO] Finished at: 2022-08-04T01:21:25Z
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-dependency-plugin:3.3.0:go-offline (default-cli) on project spring-petclinic: org.eclipse.aether.resolution.DependencyResolutionException: Failed to collect dependencies at org.ehcache:ehcache:jar:3.10.0 -> org.glassfish.jaxb:jaxb-runtime:jar:2.3.0-b170127.1453 -> org.glassfish.jaxb:jaxb-core:jar:2.3.0-b170127.1453 -> javax.xml.bind:jaxb-api:jar:2.3.0-b161121.1438: Failed to read artifact descriptor for javax.xml.bind:jaxb-api:jar:2.3.0-b161121.1438: Could not transfer artifact javax.xml.bind:jaxb-api:pom:2.3.0-b161121.1438 from/to netbeans-ssl (https://netbeans.apidesign.org/maven2/): transfer failed for https://netbeans.apidesign.org/maven2/javax/xml/bind/jaxb-api/2.3.0-b161121.1438/jaxb-api-2.3.0-b161121.1438.pom: Unknown host netbeans.apidesign.org: Try again -> [Help 1]
+```
+
+- This new problem occurs because none of the repositories, including the above mirrors, contains `javax/xml/bind/jaxb-api/2.3.0-b161121.1438/jaxb-api-2.3.0-b161121.1438.pom`
+- A further [workaround](https://stackoverflow.com/a/72150668) involves adding `<dependencyManagement>` to [`pom.xml`](spring-petclinic/pom.xml) so that `jaxb-api 2.3.1` is used instead of the above problematic version
+
 ## Sources
 
 - "Docker Overview." _Docker Documentation_, 18 July 2022, [docs.docker.com/get-started/overview/](https://docs.docker.com/get-started/overview/). Accessed 18 July 2022.
@@ -1365,6 +1504,7 @@ COPY --from=build /app/build /usr/share/nginx/html
 - "Multi Container Apps." _Docker Documentation_, Aug. 2022, [docs.docker.com/get-started/07_multi_container/](https://docs.docker.com/get-started/07_multi_container/). Accessed 1 August 2022.
 - "Use Docker Compose." _Docker Documentation_, Aug. 2022, [docs.docker.com/get-started/08_using_compose/](https://docs.docker.com/get-started/08_using_compose/). Accessed 2 August 2022.
 - "Image-Building Best Practices." _Docker Documentation_, 3 Aug. 2022, [docs.docker.com/get-started/09_image_best/](https://docs.docker.com/get-started/09_image_best/). Accessed 3 August 2022.
+- "What Are Docker Image Layers?" _Vsupalov.com_, 15 Feb. 2021, [vsupalov.com/docker-image-layers/](https://vsupalov.com/docker-image-layers/). Accessed 3 August 2022.
+- "Build Your Java Image." _Docker Documentation_, 4 Aug. 2022, [docs.docker.com/language/java/build-images/](https://docs.docker.com/language/java/build-images/). Accessed 5 August 2022.
 - "Dockerfile Reference." _Docker Documentation_, 22 July 2022, [docs.docker.com/engine/reference/builder/](https://docs.docker.com/engine/reference/builder/). Accessed 23 July 2022.
 - "Compose Specification." _Docker Documentation_, Aug. 2022, [docs.docker.com/compose/compose-file/](https://docs.docker.com/compose/compose-file/). Accessed 2 August 2022.
-- "What Are Docker Image Layers?" _Vsupalov.com_, 15 Feb. 2021, [vsupalov.com/docker-image-layers/](https://vsupalov.com/docker-image-layers/). Accessed 3 August 2022.
