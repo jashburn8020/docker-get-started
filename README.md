@@ -56,6 +56,7 @@
       * [Multi-stage Dockerfile for development](#multi-stage-dockerfile-for-development)
       * [Use Compose to develop locally](#use-compose-to-develop-locally)
       * [Connect a Debugger](#connect-a-debugger)
+      * [Run your tests](#run-your-tests)
   * [Sources](#sources)
 <!-- TOC -->
 
@@ -1777,6 +1778,124 @@ spring-petclinic-petclinic-1    | 2022-08-06 16:02:50.220  INFO 167 --- [nio-808
   - `curl --request GET --url http://localhost:8080/vets`
   - you should now see the code break on the marked line
 
+#### Run your tests
+
+- Tests are defined in the [test directory](spring-petclinic/src/test/java/org/springframework/samples/petclinic)
+- Start the container and run tests:
+
+```console
+$ docker run -it --rm --name springboot-test java-docker ./mvnw test
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------< org.springframework.samples:spring-petclinic >------------
+[INFO] Building petclinic 2.7.0-SNAPSHOT
+[INFO] --------------------------------[ jar ]---------------------------------
+Downloading from spring-snapshots: https://repo.spring.io/snapshot/net/bytebuddy/byte-buddy/1.12.11/byte-buddy-1.12.11.pom
+...
+[INFO] Results:
+[INFO] 
+[WARNING] Tests run: 41, Failures: 0, Errors: 0, Skipped: 1
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  31.106 s
+[INFO] Finished at: 2022-08-06T22:49:13Z
+[INFO] ------------------------------------------------------------------------
+```
+
+- Pull the testing commands into our multi-stage Dockerfile (see [Dockerfile_mutistage_test](spring-petclinic/Dockerfile_multistage_test))
+- Rebuild our image and run our tests
+  - add the `--target test` flag so that we specifically run the test build stage
+
+```console
+$ docker build -f Dockerfile_multistage_test -t java-docker --target test .
+[+] Building 1.7s (15/15) FINISHED                                                     
+ => [internal] load build definition from Dockerfile_multistage_test              0.0s
+ => => transferring dockerfile: 789B                                              0.0s
+ => [internal] load .dockerignore                                                 0.0s
+ => => transferring context: 47B                                                  0.0s
+ => resolve image config for docker.io/docker/dockerfile:1                        0.9s
+ => CACHED docker-image://docker.io/docker/dockerfile:1@sha256:443aab4ca21183e06  0.0s
+ => [internal] load .dockerignore                                                 0.0s
+ => [internal] load build definition from Dockerfile_multistage_test              0.0s
+ => [internal] load metadata for docker.io/library/eclipse-temurin:17-jdk-jammy   0.6s
+ => [internal] load build context                                                 0.0s
+ => => transferring context: 9.55kB                                               0.0s
+ => [base 1/6] FROM docker.io/library/eclipse-temurin:17-jdk-jammy@sha256:515fb4  0.0s
+ => CACHED [base 2/6] WORKDIR /app                                                0.0s
+ => CACHED [base 3/6] COPY .mvn/ .mvn                                             0.0s
+ => CACHED [base 4/6] COPY mvnw pom.xml ./                                        0.0s
+ => CACHED [base 5/6] RUN ./mvnw dependency:resolve                               0.0s
+ => CACHED [base 6/6] COPY src ./src                                              0.0s
+ => exporting to image                                                            0.0s
+ => => exporting layers                                                           0.0s
+ => => writing image sha256:112812aa87a83eeaa36198f622e718a0f827293f809e2f3c54a8  0.0s
+ => => naming to docker.io/library/java-docker                                    0.0s
+```
+
+- Run it as a container and see if our tests pass
+  - same as the earlier `docker run` command but we can now omit `./mvnw test` since this is now in the Dockerfile
+
+```console
+$ docker run -it --rm --name springboot-test java-docker
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------< org.springframework.samples:spring-petclinic >------------
+[INFO] Building petclinic 2.7.0-SNAPSHOT
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- spring-javaformat-maven-plugin:0.0.31:validate (default) @ spring-petclinic ---
+Downloading from spring-snapshots: https://repo.spring.io/snapshot/io/spring/javaformat/spring-javaformat-formatter/0.0.31/spring-javaformat-formatter-0.0.31.pom
+...
+[INFO] Results:
+[INFO] 
+[WARNING] Tests run: 41, Failures: 0, Errors: 0, Skipped: 1
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  02:10 min
+[INFO] Finished at: 2022-08-06T23:15:32Z
+[INFO] ------------------------------------------------------------------------
+```
+
+- Note that we have to run 2 Docker commands to build and run our tests
+  - `docker build -f Dockerfile_multistage_test -t java-docker --target test .`
+  - `docker run -it --rm --name springboot-test java-docker`
+- We can improve this slightly by using a RUN statement instead of the CMD statement in the test stage
+  - the `CMD` statement is not executed during the building of the image, but is executed when you run the image in a container
+  - using the `RUN` statement, our tests will run when building the image, and stop the build when they fail
+  - update the Dockerfile to use the `RUN` statement (see [Dockerfile_multistage_test_run](spring-petclinic/Dockerfile_multistage_test_run))
+  - to run our tests, we just need to run the `docker build` command
+
+```console
+$ docker build -f Dockerfile_multistage_test_run -t java-docker --target test .
+[+] Building 100.4s (16/16) FINISHED                                                   
+ => [internal] load build definition from Dockerfile_multistage_test_run          0.0s
+ => => transferring dockerfile: 761B                                              0.0s
+ => [internal] load .dockerignore                                                 0.0s
+ => => transferring context: 34B                                                  0.0s
+ => resolve image config for docker.io/docker/dockerfile:1                        0.8s
+ => CACHED docker-image://docker.io/docker/dockerfile:1@sha256:443aab4ca21183e06  0.0s
+ => [internal] load .dockerignore                                                 0.0s
+ => [internal] load build definition from Dockerfile_multistage_test_run          0.0s
+ => [internal] load metadata for docker.io/library/eclipse-temurin:17-jdk-jammy   0.6s
+ => [internal] load build context                                                 0.0s
+ => => transferring context: 9.55kB                                               0.0s
+ => [base 1/6] FROM docker.io/library/eclipse-temurin:17-jdk-jammy@sha256:515fb4  0.0s
+ => CACHED [base 2/6] WORKDIR /app                                                0.0s
+ => CACHED [base 3/6] COPY .mvn/ .mvn                                             0.0s
+ => CACHED [base 4/6] COPY mvnw pom.xml ./                                        0.0s
+ => CACHED [base 5/6] RUN ./mvnw dependency:resolve                               0.0s
+ => CACHED [base 6/6] COPY src ./src                                              0.0s
+ => [test 1/1] RUN ["./mvnw", "test"]                                            98.5s
+ => exporting to image                                                            0.3s
+ => => exporting layers                                                           0.3s
+ => => writing image sha256:4286d13bb96a9cf431d3f5005e659650c48437d6c3f775aaa6cc  0.0s 
+ => => naming to docker.io/library/java-docker                                    0.0s 
+```
+
 ## Sources
 
 - "Docker Overview." _Docker Documentation_, 18 July 2022, [docs.docker.com/get-started/overview/](https://docs.docker.com/get-started/overview/). Accessed 18 July 2022.
@@ -1794,5 +1913,6 @@ spring-petclinic-petclinic-1    | 2022-08-06 16:02:50.220  INFO 167 --- [nio-808
 - "Build Your Java Image." _Docker Documentation_, 4 Aug. 2022, [docs.docker.com/language/java/build-images/](https://docs.docker.com/language/java/build-images/). Accessed 5 August 2022.
 - “Run Your Image as a Container.” _Docker Documentation_, 5 Aug. 2022, [docs.docker.com/language/java/run-containers/](https://docs.docker.com/language/java/run-containers/). Accessed 5 August 2022.
 - “Use Containers for Development.” _Docker Documentation_, 5 Aug. 2022, [docs.docker.com/language/java/develop/](https://docs.docker.com/language/java/develop/). Accessed 6 August 2022.
+- "Run Your Tests." _Docker Documentation_, 5 Aug. 2022, [docs.docker.com/language/java/run-tests/](https://docs.docker.com/language/java/run-tests/). Accessed 7 August 2022.
 - "Dockerfile Reference." _Docker Documentation_, 22 July 2022, [docs.docker.com/engine/reference/builder/](https://docs.docker.com/engine/reference/builder/). Accessed 23 July 2022.
 - "Compose Specification." _Docker Documentation_, Aug. 2022, [docs.docker.com/compose/compose-file/](https://docs.docker.com/compose/compose-file/). Accessed 2 August 2022.
